@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>People data</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #172033;
+      background: #f4f7fb;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    main {
+      width: min(100% - 2rem, 900px);
+      margin: 3rem auto;
+    }
+
+    header {
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      margin: 0 0 .35rem;
+    }
+
+    .muted {
+      color: #5d6b82;
+    }
+
+    .toolbar, .summary {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .toolbar {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      font-weight: 600;
+    }
+
+    input {
+      border: 1px solid #c8d0dd;
+      border-radius: .4rem;
+      font: inherit;
+      padding: .6rem .75rem;
+      min-width: min(100%, 280px);
+    }
+
+    .summary {
+      margin-bottom: 1rem;
+    }
+
+    .summary span {
+      background: white;
+      border-radius: .5rem;
+      box-shadow: 0 1px 3px #1720331c;
+      padding: .65rem .9rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: white;
+      border-radius: .5rem;
+      box-shadow: 0 1px 3px #1720331c;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    th, td {
+      padding: .8rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid #e5e9f0;
+    }
+
+    th {
+      background: #edf2f8;
+    }
+
+    th button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      padding: 0;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    #status {
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 500px) {
+      main {
+        margin-top: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>People data</h1>
+      <p class="muted">Browse the records from <code>test1.csv</code>.</p>
+    </header>
+
+    <section class="toolbar" aria-label="Table controls">
+      <label for="search">Filter records</label>
+      <input id="search" type="search" placeholder="Search by name or age" autocomplete="off">
+    </section>
+
+    <section class="summary" aria-label="Data summary">
+      <span>Showing <strong id="row-count">0</strong> records</span>
+      <span>Average age: <strong id="average-age">—</strong></span>
+    </section>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr id="headings"></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p id="status" class="muted" role="status">Loading data…</p>
+  </main>
+
+  <script>
+    const state = { columns: [], records: [], query: "", sortColumn: null, descending: false };
+    const headings = document.querySelector("#headings");
+    const rows = document.querySelector("#rows");
+    const status = document.querySelector("#status");
+
+    function parseCsv(text) {
+      const records = [];
+      let record = [], value = "", quoted = false;
+      for (let i = 0; i < text.length; i += 1) {
+        const character = text[i];
+        if (character === '"') {
+          if (quoted && text[i + 1] === '"') {
+            value += '"';
+            i += 1;
+          } else {
+            quoted = !quoted;
+          }
+        } else if (character === "," && !quoted) {
+          record.push(value.trim());
+          value = "";
+        } else if ((character === "\n" || character === "\r") && !quoted) {
+          if (character === "\r" && text[i + 1] === "\n") i += 1;
+          record.push(value.trim());
+          if (record.some(Boolean)) records.push(record);
+          record = [];
+          value = "";
+        } else {
+          value += character;
+        }
+      }
+      if (value || record.length) {
+        record.push(value.trim());
+        if (record.some(Boolean)) records.push(record);
+      }
+      if (!records.length) return { columns: [], records: [] };
+      const columns = records.shift();
+      return {
+        columns,
+        records: records.map(values => Object.fromEntries(
+          columns.map((column, index) => [column, values[index] || ""])
+        ))
+      };
+    }
+
+    function render() {
+      const filtered = state.records.filter(record =>
+        state.columns.some(column => record[column].toLowerCase().includes(state.query))
+      );
+      if (state.sortColumn) {
+        const column = state.sortColumn;
+        filtered.sort((a, b) => {
+          const numberA = Number(a[column]), numberB = Number(b[column]);
+          const comparison = Number.isNaN(numberA) || Number.isNaN(numberB)
+            ? a[column].localeCompare(b[column])
+            : numberA - numberB;
+          return state.descending ? -comparison : comparison;
+        });
+      }
+
+      headings.replaceChildren(...state.columns.map(column => {
+        const cell = document.createElement("th");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = `${column}${state.sortColumn === column ? (state.descending ? " ↓" : " ↑") : ""}`;
+        button.addEventListener("click", () => {
+          state.descending = state.sortColumn === column ? !state.descending : false;
+          state.sortColumn = column;
+          render();
+        });
+        cell.append(button);
+        return cell;
+      }));
+      rows.replaceChildren(...filtered.map(record => {
+        const row = document.createElement("tr");
+        row.append(...state.columns.map(column => {
+          const cell = document.createElement("td");
+          cell.textContent = record[column];
+          return cell;
+        }));
+        return row;
+      }));
+
+      document.querySelector("#row-count").textContent = filtered.length;
+      const ages = filtered.map(record => Number(record.age)).filter(Number.isFinite);
+      document.querySelector("#average-age").textContent = ages.length
+        ? (ages.reduce((total, age) => total + age, 0) / ages.length).toFixed(1)
+        : "—";
+      status.textContent = filtered.length ? "" : "No matching records.";
+    }
+
+    document.querySelector("#search").addEventListener("input", event => {
+      state.query = event.target.value.trim().toLowerCase();
+      render();
+    });
+
+    fetch("test1.csv")
+      .then(response => {
+        if (!response.ok) throw new Error(`Unable to load test1.csv (${response.status})`);
+        return response.text();
+      })
+      .then(text => {
+        const parsed = parseCsv(text);
+        state.columns = parsed.columns;
+        state.records = parsed.records;
+        if (!state.columns.length) throw new Error("test1.csv does not contain any data");
+        render();
+      })
+      .catch(error => {
+        status.textContent = error.message;
+      });
+  </script>
+</body>
+</html>
